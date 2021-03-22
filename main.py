@@ -96,7 +96,7 @@ def radon_transform(img_src,n,l, d_alfa):
     plt.imshow( radon , cmap = 'gray')
     plt.show()
 
-    # Zwraca
+    # Zwraca macierz z sygnałami widoków (np. radon[0] zwróci średnie wartości pixeli w promieniach o stopniu nachylenia alfa = 0, radon[60] -> alfa=60 (dla d_alfa = 1)) 
     return radon
 
 if __name__ == '__main__':

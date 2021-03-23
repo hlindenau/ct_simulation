@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from matplotlib import animation
 
-# Zwraca koordynaty pixeli znajdującej się na odcinku od (x0,y0) do (x1,y1)
+# Zwraca koordynaty pixeli znajdujących się na odcinku od (x0,y0) do (x1,y1)
 def bresenham(x0, y0, x1, y1,img_size):
     dx = x1 - x0
     dy = y1 - y0
@@ -62,7 +62,7 @@ def get_ray_pixels(img_size,alfa,ro):
     return pixel_array
 
 # Zwraca średnią wartość (0-255) pixeli w promieniu
-def get_ray_value(ro, alfa, img_shape):
+def get_ray_value(ro, alfa, img):
     img_size = img.shape[0]
     ray_pixels = get_ray_pixels(img_size-1,alfa,ro)
 
@@ -78,16 +78,14 @@ def get_ray_value(ro, alfa, img_shape):
 # Wykonuje transformatę Radona dla obrazka, n - liczba emiterów, l - rozpiętość układu emiterów/detektorów (w pixelach), d_alfa - krok układu emiter/detektor
 def radon_transform(img_src,n,l, d_alfa):
     img = cv2.imread(img_src,cv2.IMREAD_GRAYSCALE)
-
-    img_size = img.shape[0]
-
+    print(img.shape)
     alfa = np.arange(0, 180.0, d_alfa)
     ro = np.arange(-l/2, l/2, l/n)
 
     vals = []
     for i in alfa:
         for j in ro:
-            vals.append(get_ray_value(j,i,img_size))
+            vals.append(get_ray_value(j,i,img))
     val = list(map(int, vals))
 
     radon = np.array(val).reshape(int(180/d_alfa), n)
@@ -96,12 +94,29 @@ def radon_transform(img_src,n,l, d_alfa):
     plt.imshow( radon , cmap = 'gray')
     plt.show()
 
-    # Zwraca macierz z sygnałami widoków (np. radon[0] zwróci średnie wartości pixeli w promieniach o stopniu nachylenia alfa = 0, radon[60] -> alfa=60 (dla d_alfa = 1)) 
+
     return radon
 
 if __name__ == '__main__':
 
-    img = cv2.imread('tomograf-zdjecia/Kwadraty2.jpg',cv2.IMREAD_GRAYSCALE)
-    radon = radon_transform('tomograf-zdjecia/Kwadraty2.jpg',200,200,1)
+    n = 200
+    l = 200
 
+    radon = radon_transform("tomograf-zdjecia/Kropka.jpg",l,n,1)
 
+    ###
+
+    img2 = np.full((l, l, 2), 0, dtype=np.uint64)
+    alfa = np.arange(0, 180, 1)
+    ro = np.arange(int(-l / 2),int(l / 2), int(l / n))
+    mat = np.zeros((n,n))
+
+    for i in alfa:
+        for j in ro:
+            for k in get_ray_pixels(img2.shape[0],i,j):
+                mat[k[0] - 1][k[1] - 1] += radon[i-1][int(l / 2) + j - 1]
+
+    mat = mat/180
+    plt.imshow(mat, cmap='gray')
+    plt.show()
+    exit()

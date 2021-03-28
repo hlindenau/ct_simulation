@@ -146,18 +146,18 @@ def inv_radon(img, l, n):
     mat = mat / 180
     return mat
 
-def filter_row(row, f):
-    row_freq = fft(row)
-    filter_freq = fft(f)
-    filtered_row_freq = [a * b for a, b in zip(row_freq, filter_freq)]
-    return np.real(ifft(filtered_row_freq))
+def filter_row(row, f): #  doesn't work if len(f) is 1
+    l = len(f)
+    offset_end = int((l - 1) / 2)
+    offset_start = offset_end + (1 if l % 2 == 0 else 0)
+    return signal.convolve(row, f)[offset_start:-offset_end]
 
-def filter_img(img):
+def filter_img(img, size = 95):
     height = img.shape[0]
     width = img.shape[1]
 
     filtered_matrix = []
-    f = generate_filter2(width)
+    f = generate_filter(size)
 
     for i in range(0, height):
         filtered_matrix.append(filter_row(img[i, :], f))
@@ -232,7 +232,11 @@ if __name__ == '__main__':
     plt.show()
     radon = radon_transform("tomograf-zdjecia/Kropka.jpg",l,n,1)
 
-    mat = inv_radon(radon, l, n)
+    filtered_radon = filter_img(radon, 95)
+    plt.imshow(filtered_radon, cmap='gray')
+    plt.show()
+
+    mat = inv_radon(filtered_radon, l, n)
     plt.imshow(mat, cmap='gray')
     plt.show()
     save_dicom("jorji", "Jorji Costava", mat, "ligma")

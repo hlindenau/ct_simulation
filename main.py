@@ -3,6 +3,13 @@ import matplotlib.pyplot as plt
 import cv2
 import numpy as np
 from matplotlib import animation
+from numpy.fft import fft, ifft
+from PIL import Image
+from scipy import signal
+import pydicom
+import datetime
+from pydicom.dataset import Dataset, FileDataset, FileMetaDataset
+
 
 # Zwraca koordynaty pixeli znajdujących się na odcinku od (x0,y0) do (x1,y1)
 def bresenham(x0, y0, x1, y1,img_size):
@@ -94,29 +101,139 @@ def radon_transform(img_src,n,l, d_alfa):
     plt.imshow( radon , cmap = 'gray')
     plt.show()
 
-
     return radon
+
+def generate_filter(count):
+    filt = [0] * count
+    start = int(count / 2)
+    for i in range(0, count - start): # positive indices
+        num = None
+        if i == 0:
+            num = 1
+        elif i % 2 == 0:
+            num = 0
+        else:
+            num = (-4 / (math.pi ** 2)) / (i ** 2)
+        filt[i + start] = num
+
+    for i in range(0, start): # negative indices
+        num = None
+        substitute_i = start - i
+        if substitute_i % 2 == 1:
+            num = (-4 / (math.pi ** 2)) / (substitute_i ** 2)
+        else:
+            num = 0
+        filt[i] = num
+
+    return filt
+
+    # return [1 if i == 0 else 0 if i % 2 == 0 else (-4 / (math.pi ** 2)) / (i ** 2) for i in f]
+
+def generate_filter2(count):
+    f = range(0, count)
+    return [1 if i == 0 else 0 if i % 2 == 0 else (-4 / (math.pi ** 2)) / (i ** 2) for i in f]
+
+def inv_radon(img, l, n):
+    img2 = np.full((l, l, 2), 0, dtype=np.uint64)
+    alfa = np.arange(0, 180, 1)
+    ro = np.arange(int(-l / 2), int(l / 2), int(l / n))
+    mat = np.zeros((n, n))
+
+    for i in alfa:
+        for j in ro:
+            for k in get_ray_pixels(img2.shape[0], i, j):
+                mat[k[0] - 1][k[1] - 1] += img[i - 1][int(l / 2) + j - 1]
+    mat = mat / 180
+    return mat
+
+def filter_row(row, f):
+    row_freq = fft(row)
+    filter_freq = fft(f)
+    filtered_row_freq = [a * b for a, b in zip(row_freq, filter_freq)]
+    return np.real(ifft(filtered_row_freq))
+
+def filter_img(img):
+    height = img.shape[0]
+    width = img.shape[1]
+
+    filtered_matrix = []
+    f = generate_filter2(width)
+
+    for i in range(0, height):
+        filtered_matrix.append(filter_row(img[i, :], f))
+
+    # filtered_img = np.uint8(np.array(filtered_matrix))
+    filtered_img = np.array(filtered_matrix)
+    return filtered_img
+
+def get_patient_id(name):
+    return abs(hash(name)) % (10 ** 8)
+
+def save_dicom(filename, name, image, study_description, study_date = ""):
+    filename_little_endian = filename + ".dcm"
+
+    file_meta = FileMetaDataset()
+    # file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.2'
+    file_meta.MediaStorageSOPClassUID = pydicom._storage_sopclass_uids.MRImageStorage
+    file_meta.MediaStorageSOPInstanceUID = "1.2.3"
+    file_meta.ImplementationClassUID = "1.2.3.4"
+    file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
+
+    # FIXME https://stackoverflow.com/questions/14350675/create-pydicom-file-from-numpy-array
+
+    ds = FileDataset(filename_little_endian, {},
+                     file_meta=file_meta, preamble=b"\0" * 128)
+
+    ds.Modality = 'WSD'
+    ds.ContentDate = str(datetime.date.today()).replace('-', '')
+    ds.ContentTime = str(time.time())  # milliseconds since the epoch
+    ds.StudyInstanceUID = '1.3.6.1.4.1.9590.100.1.1.124313977412360175234271287472804872093'
+    ds.SeriesInstanceUID = '1.3.6.1.4.1.9590.100.1.1.369231118011061003403421859172643143649'
+    ds.SOPInstanceUID = '1.3.6.1.4.1.9590.100.1.1.111165684411017669021768385720736873780'
+    ds.SOPClassUID = 'Secondary Capture Image Storage'
+
+    ds.PatientName = name
+    ds.PatientID = str(get_patient_id(name))
+    ds.is_little_endian = True
+    ds.is_implicit_VR = False
+    ds.StudyDescription = study_description
+    ds.PixelRepresentation = 0
+    ds.SamplesPerPixel = 1
+    ds.RescaleIntercept = "0"
+    ds.RescaleSlope = "1"
+    ds.PixelSpacing = r"1\1"
+    ds.PhotometricInterpretation = "MONOCHROME2"
+    ds.HighBit = 7
+    ds.BitsStored = 8
+    ds.BitsAllocated = 8
+    ds.ImageType = r"ORIGINAL\PRIMARY\AXIAL"
+    ds.Rows = image.shape[0]
+    ds.Columns = image.shape[1]
+
+    if image.dtype != np.uint8:
+        image = image.astype(np.uint8)
+
+    ds.PixelData = image.tobytes()
+    ds.SmallestImagePixelValue = str.encode("\x00\x00")
+    ds.LargestImagePixelValue = str.encode("\xff\xff")
+
+    dt = datetime.datetime.now()
+    ds.StudyDate = dt.strftime('%Y%m%d')
+
+    ds.save_as(filename_little_endian)
 
 if __name__ == '__main__':
 
     n = 200
     l = 200
 
+    img = cv2.imread("tomograf-zdjecia/Kropka.jpg", cv2.IMREAD_GRAYSCALE)
+    plt.imshow(img, cmap="gray")
+    plt.show()
     radon = radon_transform("tomograf-zdjecia/Kropka.jpg",l,n,1)
 
-    ###
-
-    img2 = np.full((l, l, 2), 0, dtype=np.uint64)
-    alfa = np.arange(0, 180, 1)
-    ro = np.arange(int(-l / 2),int(l / 2), int(l / n))
-    mat = np.zeros((n,n))
-
-    for i in alfa:
-        for j in ro:
-            for k in get_ray_pixels(img2.shape[0],i,j):
-                mat[k[0] - 1][k[1] - 1] += radon[i-1][int(l / 2) + j - 1]
-
-    mat = mat/180
+    mat = inv_radon(radon, l, n)
     plt.imshow(mat, cmap='gray')
     plt.show()
+    save_dicom("jorji", "Jorji Costava", mat, "ligma")
     exit()

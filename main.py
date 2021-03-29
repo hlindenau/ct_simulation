@@ -2,13 +2,14 @@ import math
 import matplotlib.pyplot as plt
 import cv2
 import numpy as np
-from matplotlib import animation
 from numpy.fft import fft, ifft
 from PIL import Image
 from scipy import signal
 import pydicom
 import datetime
 from pydicom.dataset import Dataset, FileDataset, FileMetaDataset
+from scipy.ndimage import gaussian_filter
+from sklearn.metrics import mean_squared_error
 
 
 # Zwraca koordynaty pixeli znajdujących się na odcinku od (x0,y0) do (x1,y1)
@@ -83,19 +84,22 @@ def get_ray_value(ro, alfa, img):
     return avg
 
 # Wykonuje transformatę Radona dla obrazka, n - liczba emiterów, l - rozpiętość układu emiterów/detektorów (w pixelach), d_alfa - krok układu emiter/detektor
-def radon_transform(img_src,n,l, d_alfa):
+def radon_transform(img_src,n,l, d_alfa,it_num):
     img = cv2.imread(img_src,cv2.IMREAD_GRAYSCALE)
     print(img.shape)
     alfa = np.arange(0, 180.0, d_alfa)
     ro = np.arange(-l/2, l/2, l/n)
-
+    it = 0
     vals = []
     for i in alfa:
+        if(it == it_num):
+            break;
         for j in ro:
             vals.append(get_ray_value(j,i,img))
+        it += 1
     val = list(map(int, vals))
 
-    radon = np.array(val).reshape(int(180/d_alfa), n)
+    radon = np.array(val).reshape(int(it_num), n)
 
     # Sinogram
     plt.imshow( radon , cmap = 'gray')
@@ -130,37 +134,53 @@ def generate_filter(count):
     # return [1 if i == 0 else 0 if i % 2 == 0 else (-4 / (math.pi ** 2)) / (i ** 2) for i in f]
 
 def generate_filter2(count):
-    f = range(0, count)
+    #f = range(0, count)
+    f = range(-count+1,count)
     return [1 if i == 0 else 0 if i % 2 == 0 else (-4 / (math.pi ** 2)) / (i ** 2) for i in f]
 
-def inv_radon(img, l, n):
-    img2 = np.full((l, l, 2), 0, dtype=np.uint64)
-    alfa = np.arange(0, 180, 1)
+def inv_radon(sinogram,original, l, n,d_alfa,it_num):
+    alfa = np.arange(0, 180/d_alfa, 1)
     ro = np.arange(int(-l / 2), int(l / 2), int(l / n))
-    mat = np.zeros((n, n))
-
+    mat = np.zeros((original.shape[1], original.shape[1]))
+    it = 0
     for i in alfa:
+        if(it == it_num):
+            break;
         for j in ro:
-            for k in get_ray_pixels(img2.shape[0], i, j):
-                mat[k[0] - 1][k[1] - 1] += img[i - 1][int(l / 2) + j - 1]
-    mat = mat / 180
+            for k in get_ray_pixels(original.shape[0], i*d_alfa, j):
+                mat[k[0] - 1][k[1] - 1] += sinogram[int(i)][int(l / 2) + j - 1]
+        it += 1
+
+    mat = mat / (180/d_alfa)
+    print(math.sqrt(mean_squared_error(original, mat)))
     return mat
 
-def filter_row(row, f): #  doesn't work if len(f) is 1
+def filter_row(row, f):
+    row_freq = fft(row)
+    filter_freq = fft(f)
+    filtered_row_freq = [a * b for a, b in zip(row_freq, filter_freq)]
+    return np.real(ifft(filtered_row_freq))
+
+def filter_row2(row, f): #  doesn't work if len(f) is 1
     l = len(f)
     offset_end = int((l - 1) / 2)
     offset_start = offset_end + (1 if l % 2 == 0 else 0)
+    gauss = signal.windows.gaussian(3,0.5)
+    filtered_row = signal.convolve(row,gauss)
     return signal.convolve(row, f)[offset_start:-offset_end]
 
-def filter_img(img, size = 95):
+
+def filter_img(img):
     height = img.shape[0]
     width = img.shape[1]
 
     filtered_matrix = []
-    f = generate_filter(size)
-
+    #f = generate_filter2(width)
+    f = generate_filter2(10)
+    arr = np.array(img)
+    gauss = gaussian_filter(arr,sigma=1)
     for i in range(0, height):
-        filtered_matrix.append(filter_row(img[i, :], f))
+        filtered_matrix.append(filter_row2(gauss[i, :], f))
 
     # filtered_img = np.uint8(np.array(filtered_matrix))
     filtered_img = np.array(filtered_matrix)
@@ -173,8 +193,9 @@ def save_dicom(filename, name, image, study_description, study_date = ""):
     filename_little_endian = filename + ".dcm"
 
     file_meta = FileMetaDataset()
-    # file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.2'
-    file_meta.MediaStorageSOPClassUID = pydicom._storage_sopclass_uids.MRImageStorage
+    file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.2'
+    #file_meta.MediaStorageSOPClassUID = pydicom._storage_sopclass_uids.MRImageStorage
+
     file_meta.MediaStorageSOPInstanceUID = "1.2.3"
     file_meta.ImplementationClassUID = "1.2.3.4"
     file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
@@ -186,7 +207,7 @@ def save_dicom(filename, name, image, study_description, study_date = ""):
 
     ds.Modality = 'WSD'
     ds.ContentDate = str(datetime.date.today()).replace('-', '')
-    ds.ContentTime = str(time.time())  # milliseconds since the epoch
+    ds.ContentTime = str(datetime.time())  # milliseconds since the epoch
     ds.StudyInstanceUID = '1.3.6.1.4.1.9590.100.1.1.124313977412360175234271287472804872093'
     ds.SeriesInstanceUID = '1.3.6.1.4.1.9590.100.1.1.369231118011061003403421859172643143649'
     ds.SOPInstanceUID = '1.3.6.1.4.1.9590.100.1.1.111165684411017669021768385720736873780'
@@ -224,20 +245,46 @@ def save_dicom(filename, name, image, study_description, study_date = ""):
 
 if __name__ == '__main__':
 
-    n = 200
-    l = 200
+    # Ilość emiterów
+    n = 180
+    # Rozpiętość
+    l = 180
+    # Krok układu emiter/detektor
+    d_alfa = 0.25
 
-    img = cv2.imread("tomograf-zdjecia/Kropka.jpg", cv2.IMREAD_GRAYSCALE)
+    # Liczba iteracji
+    it_num = 180/d_alfa
+    #it_num = 90
+
+    filter = True
+
+    filename = "tomograf-zdjecia/Shepp_logan.jpg"
+
+    img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
+
     plt.imshow(img, cmap="gray")
     plt.show()
-    radon = radon_transform("tomograf-zdjecia/Kropka.jpg",l,n,1)
-
-    filtered_radon = filter_img(radon, 95)
-    plt.imshow(filtered_radon, cmap='gray')
-    plt.show()
-
-    mat = inv_radon(filtered_radon, l, n)
+    radon = radon_transform(filename,l,n,d_alfa,it_num)
+    if(filter == True):
+        radon = filter_img(radon)
+        plt.imshow(radon, cmap='gray')
+        plt.show()
+    mat = inv_radon(radon,img, l, n,d_alfa,it_num)
     plt.imshow(mat, cmap='gray')
     plt.show()
+
+
+
+    # Wczytywanie pliku DICOM
     save_dicom("jorji", "Jorji Costava", mat, "ligma")
+
+    dataset = pydicom.read_file("jorji.dcm")
+
+    print("Pacjent:", dataset.PatientName)
+    print("ID:",dataset.PatientID)
+    print("Data badania:",dataset.ContentDate)
+    print("Komentarz:", dataset.StudyDescription)
+
+    plt.imshow(dataset.pixel_array,cmap='gray')
+    plt.show()
     exit()

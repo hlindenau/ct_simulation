@@ -84,8 +84,7 @@ def get_ray_value(ro, alfa, img):
     return avg
 
 # Wykonuje transformatę Radona dla obrazka, n - liczba emiterów, l - rozpiętość układu emiterów/detektorów (w pixelach), d_alfa - krok układu emiter/detektor
-def radon_transform(img_src,n,l, d_alfa,it_num):
-    img = cv2.imread(img_src,cv2.IMREAD_GRAYSCALE)
+def radon_transform(img,n,l, d_alfa,it_num):
     print(img.shape)
     alfa = np.arange(0, 180.0, d_alfa)
     ro = np.arange(-l/2, l/2, l/n)
@@ -138,21 +137,21 @@ def generate_filter2(count):
     f = range(-count+1,count)
     return [1 if i == 0 else 0 if i % 2 == 0 else (-4 / (math.pi ** 2)) / (i ** 2) for i in f]
 
-def inv_radon(sinogram,original, l, n,d_alfa,it_num):
+def inv_radon(sinogram, original, l, n, d_alfa, it_num):
     alfa = np.arange(0, 180/d_alfa, 1)
     ro = np.arange(int(-l / 2), int(l / 2), int(l / n))
-    mat = np.zeros((original.shape[1], original.shape[1]))
+    mat = np.zeros(original)
     it = 0
     for i in alfa:
         if(it == it_num):
-            break;
+            break
         for j in ro:
-            for k in get_ray_pixels(original.shape[0], i*d_alfa, j):
+            for k in get_ray_pixels(original[0], i*d_alfa, j):
                 mat[k[0] - 1][k[1] - 1] += sinogram[int(i)][int(l / 2) + j - 1]
         it += 1
 
     mat = mat / (180/d_alfa)
-    print(math.sqrt(mean_squared_error(original, mat)))
+    # print(math.sqrt(mean_squared_error(original, mat))) FIXME original is tuple instead of img
     return mat
 
 def filter_row(row, f):
@@ -170,13 +169,13 @@ def filter_row2(row, f): #  doesn't work if len(f) is 1
     return signal.convolve(row, f)[offset_start:-offset_end]
 
 
-def filter_img(img):
+def filter_img(img, f_size = 25):
     height = img.shape[0]
     width = img.shape[1]
 
     filtered_matrix = []
     #f = generate_filter2(width)
-    f = generate_filter2(10)
+    f = generate_filter2(f_size)
     arr = np.array(img)
     gauss = gaussian_filter(arr,sigma=1)
     for i in range(0, height):
@@ -189,7 +188,17 @@ def filter_img(img):
 def get_patient_id(name):
     return abs(hash(name)) % (10 ** 8)
 
-def save_dicom(filename, name, image, study_description, study_date = ""):
+def convert_to_cv2(img):
+    pil_image = img.convert('RGB')
+    open_cv_image = np.array(pil_image)
+    # Convert RGB to BGR
+    open_cv_image = open_cv_image[:, :, ::-1].copy()
+    return open_cv_image
+
+def rmse(a, b):
+    return ((a - b) ** 2).mean() ** .5
+
+def save_dicom(filename, name, image, study_description, dob, sex, study_date):
     filename_little_endian = filename + ".dcm"
 
     file_meta = FileMetaDataset()
@@ -206,7 +215,7 @@ def save_dicom(filename, name, image, study_description, study_date = ""):
                      file_meta=file_meta, preamble=b"\0" * 128)
 
     ds.Modality = 'WSD'
-    ds.ContentDate = str(datetime.date.today()).replace('-', '')
+    ds.ContentDate = str(datetime.datetime.now()).replace('-', '/')
     ds.ContentTime = str(datetime.time())  # milliseconds since the epoch
     ds.StudyInstanceUID = '1.3.6.1.4.1.9590.100.1.1.124313977412360175234271287472804872093'
     ds.SeriesInstanceUID = '1.3.6.1.4.1.9590.100.1.1.369231118011061003403421859172643143649'
@@ -214,7 +223,9 @@ def save_dicom(filename, name, image, study_description, study_date = ""):
     ds.SOPClassUID = 'Secondary Capture Image Storage'
 
     ds.PatientName = name
+    ds.PatientSex = sex
     ds.PatientID = str(get_patient_id(name))
+    ds.PatientBirthDate = str(dob).replace("-", "/")
     ds.is_little_endian = True
     ds.is_implicit_VR = False
     ds.StudyDescription = study_description
@@ -235,11 +246,11 @@ def save_dicom(filename, name, image, study_description, study_date = ""):
         image = image.astype(np.uint8)
 
     ds.PixelData = image.tobytes()
+    print(image.tobytes())
     ds.SmallestImagePixelValue = str.encode("\x00\x00")
     ds.LargestImagePixelValue = str.encode("\xff\xff")
 
-    dt = datetime.datetime.now()
-    ds.StudyDate = dt.strftime('%Y%m%d')
+    ds.StudyDate = study_date.strftime('%Y/%m/%d')
 
     ds.save_as(filename_little_endian)
 
@@ -258,27 +269,27 @@ if __name__ == '__main__':
 
     filter = True
 
-    filename = "tomograf-zdjecia/Shepp_logan.jpg"
+    filename = "tomograf-zdjecia/Kwadraty2.jpg"
 
     img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
 
     plt.imshow(img, cmap="gray")
     plt.show()
-    radon = radon_transform(filename,l,n,d_alfa,it_num)
+    radon = radon_transform(img, l, n, d_alfa, it_num)
     if(filter == True):
         radon = filter_img(radon)
         plt.imshow(radon, cmap='gray')
         plt.show()
-    mat = inv_radon(radon,img, l, n,d_alfa,it_num)
+    mat = inv_radon(radon,img.shape, l, n,d_alfa,it_num)
     plt.imshow(mat, cmap='gray')
     plt.show()
 
 
 
     # Wczytywanie pliku DICOM
-    save_dicom("jorji", "Jorji Costava", mat, "ligma")
+    save_dicom("jorji3", "Jorji Costava", mat, "ligma", datetime.datetime.now(), "Gmail", datetime.datetime.now())
 
-    dataset = pydicom.read_file("jorji.dcm")
+    dataset = pydicom.read_file("jorji3.dcm")
 
     print("Pacjent:", dataset.PatientName)
     print("ID:",dataset.PatientID)
@@ -287,4 +298,5 @@ if __name__ == '__main__':
 
     plt.imshow(dataset.pixel_array,cmap='gray')
     plt.show()
+
     exit()

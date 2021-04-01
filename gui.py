@@ -72,7 +72,7 @@ elif uploaded_image is not None:
 
     sinogramme = radon_transform(original_img, detectors_slider, scans_slider, range_step_slider, 180 / range_step_slider)
     # sinogramme_img_resized = cv2.resize(sinogramme_img, image.shape) # FIXME
-    st.image(sinogramme, "Sinogramme")
+    st.image(sinogramme, "Sinogramme", original_img.shape[1])
     sinogramme_src = sinogramme
 
     if use_filter:
@@ -80,7 +80,7 @@ elif uploaded_image is not None:
 
         sinogramme_filtered_norm = np.zeros(sinogramme_filtered.shape)
         sinogramme_filtered_norm = cv2.normalize(sinogramme_filtered, sinogramme_filtered_norm, 0, 1, cv2.NORM_MINMAX)
-        st.image(sinogramme_filtered_norm, "Filtered sinogramme", clamp=True)
+        st.image(sinogramme_filtered_norm, "Filtered sinogramme", clamp=True, width=original_img.shape[1])
 
         sinogramme_src = sinogramme_filtered
 

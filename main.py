@@ -256,40 +256,40 @@ def save_dicom(filename, name, image, study_description, dob, sex, study_date):
 
 if __name__ == '__main__':
 
-    # Ilość emiterów
-    n = 180
-    # Rozpiętość
-    l = 180
-    # Krok układu emiter/detektor
-    d_alfa = 0.25
+    # # Ilość emiterów
+    # n = 180
+    # # Rozpiętość
+    # l = 180
+    # # Krok układu emiter/detektor
+    # d_alfa = 0.25
+    #
+    # # Liczba iteracji
+    # it_num = 180/d_alfa
+    # #it_num = 90
+    #
+    # filter = True
+    #
+    # filename = "tomograf-zdjecia/Kwadraty2.jpg"
+    #
+    # img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
+    #
+    # plt.imshow(img, cmap="gray")
+    # plt.show()
+    # radon = radon_transform(img, l, n, d_alfa, it_num)
+    # if(filter == True):
+    #     radon = filter_img(radon)
+    #     plt.imshow(radon, cmap='gray')
+    #     plt.show()
+    # mat = inv_radon(radon,img.shape, l, n,d_alfa,it_num)
+    # plt.imshow(mat, cmap='gray')
+    # plt.show()
+    #
+    #
+    #
+    # # Wczytywanie pliku DICOM
+    # save_dicom("jorji", "Jorji Costava", mat, "ligma", datetime.datetime.now(), "Gmail", datetime.datetime.now())
 
-    # Liczba iteracji
-    it_num = 180/d_alfa
-    #it_num = 90
-
-    filter = True
-
-    filename = "tomograf-zdjecia/Kwadraty2.jpg"
-
-    img = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
-
-    plt.imshow(img, cmap="gray")
-    plt.show()
-    radon = radon_transform(img, l, n, d_alfa, it_num)
-    if(filter == True):
-        radon = filter_img(radon)
-        plt.imshow(radon, cmap='gray')
-        plt.show()
-    mat = inv_radon(radon,img.shape, l, n,d_alfa,it_num)
-    plt.imshow(mat, cmap='gray')
-    plt.show()
-
-
-
-    # Wczytywanie pliku DICOM
-    save_dicom("jorji3", "Jorji Costava", mat, "ligma", datetime.datetime.now(), "Gmail", datetime.datetime.now())
-
-    dataset = pydicom.read_file("jorji3.dcm")
+    dataset = pydicom.read_file("jorji.dcm")
 
     print("Pacjent:", dataset.PatientName)
     print("ID:",dataset.PatientID)
